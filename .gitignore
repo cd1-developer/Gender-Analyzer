@@ -1,0 +1,41 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environment
+.venv/
+env/
+venv/
+
+# Environment variables
+*.env
+*.env.*
+
+# Vercel local files (if any)
+.vercel/
+
+# Byte-compiled / optimized files
+*.pyd
+*.pyo
+*.pyd
+
+# PyInstaller files
+build/
+dist/
+*.spec
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# IDE configs
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Python packaging
+*.egg-info/
