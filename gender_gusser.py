@@ -6,8 +6,23 @@ male_keywords_high = ["mr", "sir", "gentleman", "man", "male", "boy", "king", "p
 female_keywords_high = ["mrs", "ms", "miss", "madam", "lady", "female", "girl", "queen", "princess"]
 
 # Lower confidence name parts/endings
-male_endings = ["o", "as", "os", "an", "ik", "us", "er", "es", "el", "ad", "in"]
-female_endings = ["a", "ia", "na", "ta", "ine", "elle", "ka", "et", "en"]
+male_endings = [
+    "ad", "ald", "an", "ard", "as", "bart", "bert", "brook", "croft", "dal",
+    "den", "don", "el", "er", "es", "field", "ford", "hard", "holt", "ic",
+    "ick", "ik", "in", "kell", "man", "mart", "men", "mer", "mond", "mont",
+    "ner", "o", "os", "rell", "ric", "rick", "ridge", "ron", "sen", "smith",
+    "son", "stone", "ter", "tin", "ton", "us", "vale", "ward", "well",
+    "wood", "wright", "yor"
+]
+
+female_endings = [
+    "a", "ayah", "bella", "beth", "betha", "cia", "eisha", "ela", "ella", "elle",
+    "en", "era", "etta", "ette", "et", "ia", "iah", "ina", "ine", "ira", "ita",
+    "ka", "lea", "lena", "lia", "line", "lina", "lora", "lyn", "lynne", "lynn",
+    "mara", "mera", "na", "nia", "nora", "ona", "ora", "ota", "ria", "rose",
+    "sea", "sia", "ta", "tia", "ula", "ura", "via", "yla"
+]
+
 
 # Prepositions/Connectors to ignore in analysis
 ignore_words = ["and", "the", "a", "of", "for", "with", "at", "by", "in", "to", "from", "user", "name"]
@@ -26,47 +41,48 @@ def apply_gender_guess(fullname, username,male_female_keywords) -> dict:
 
 
 
-# --- REVISED combined_guess FUNCTION (HANDLES PRIORITY LOGIC - USERNAME FIRST) ---
+# -------------------------------------------------------------------------
+# --- REVISED combined_guess FUNCTION (FULL NAME PRIORITY, MAX CONFIDENCE TRACKING) ---
+# -------------------------------------------------------------------------
 def combined_guess(fullname_processed, username_original,male_female_keywords):
     """
-    Combines analysis, prioritizing the original username first, 
-    then falling back to the aggressively cleaned full name.
+    Combines analysis, prioritizing the aggressively cleaned full name first, 
+    then falling back to the original username, always returning the highest confidence result.
     """
     
-    # 1. Try the full Username (Check 1 - NEW PRIMARY CHECK)
-    gender_un, conf_un = analyze_name(username_original,male_female_keywords)
-    if conf_un > 55:
-        # If the username provides a good guess, use it
-        return gender_un, conf_un
+    # Initialize best guess with the Ambiguous default (conf=50)
+    best_gender = "Ambiguous"
+    max_conf = 50 
+
+    # 1. Check Full Name (Primary Check)
+    gender_fn, conf_fn = analyze_name(fullname_processed,male_female_keywords)
+    if conf_fn > max_conf:
+        best_gender, max_conf = gender_fn, conf_fn
     
-    # 2. Try the first part of the cleaned username (Check 2 - Secondary Username check)
+    # 2. Check Full Username (Fallback Check 1)
+    gender_un, conf_un = analyze_name(username_original,male_female_keywords)
+    # Apply a slight penalty if it's used only as a fallback
+    conf_un_adjusted = conf_un - 5 
+    if conf_un_adjusted > max_conf: 
+        best_gender, max_conf = gender_un, conf_un_adjusted
+
+    # 3. Check the first part of the cleaned username (Fallback Check 2)
     cleaned_un = clean_name(username_original)
     first_name_guess = cleaned_un.split()[0] if cleaned_un else ""
 
     if first_name_guess:
         # Re-analyze ONLY the first word to force a dictionary/ending match
         gender_first, conf_first = analyze_name(first_name_guess,male_female_keywords)
-        
-        # Accept this guess if it's better than pure Ambiguous (conf_first > 50)
-        if conf_first > 50 and conf_first > conf_un: # Only take it if it improves the guess
-            # Assign a slightly elevated confidence for the first word match
-            return gender_first, max(conf_first, 60) # Guarantee a reasonable confidence if found
+        if conf_first > 50:
+             # Ensure this first-word guess always gets a floor confidence of 60 if found
+            conf_first_adjusted = max(conf_first, 60)
+            if conf_first_adjusted > max_conf:
+                best_gender, max_conf = gender_first, conf_first_adjusted
+    
+    return best_gender, max_conf
 
-    # 3. Fallback to Processed Full Name (Check 3 - NEW FALLBACK)
-    gender_fn, conf_fn = analyze_name(fullname_processed,male_female_keywords)
-    if conf_fn > 50:
-        # Reduce confidence for the fallback check (Full Name) to reflect lower priority
-        return gender_fn, conf_fn - 5
-
-    # 4. Final Fallback (Lowest confidence result)
-    return gender_fn, conf_fn
-
-
-# --- CORE analyze_name FUNCTION (Updated with deeper check) ---
 def analyze_name(name,male_female_keywords):
     """Core logic to guess gender based on keywords, DICTIONARY LOOKUP, and endings."""
- 
-
     clean_n = clean_name(name)
     if not clean_n:
         return "Ambiguous", 0
@@ -86,35 +102,37 @@ def analyze_name(name,male_female_keywords):
         if kw in name_words:
             return "Female", 99
 
-    # 2A. Dictionary Lookup on First Word (Primary source of truth) - CONFIDENCE 95
+    # 2A. Dictionary Lookup on First Word (Primary source of truth - USA only) - CONFIDENCE 95
     if first_word in male_female_keywords:
         gender = male_female_keywords[first_word]
         return gender, 95
             
-    # 2B. Dictionary Lookup on Second Word - CONFIDENCE 90 
+    # 2B. Dictionary Lookup on Second Word (USA only) - CONFIDENCE 90 
     if second_word and second_word in male_female_keywords:
         gender = male_female_keywords[second_word]
         return gender, 90
 
-    # 3. Ending Pattern Check (Focus on the first word) - CONFIDENCE 85-87
+    # 3. Ending Pattern Check (Focus on the first word) - CONFIDENCE 91-93 (BOOSTED)
     for end in male_endings:
         if first_word.endswith(end) and len(first_word) > 2:
-            return "Male", 85
+            return "Male", 91 # Elevated from 85
     for end in female_endings:
         if first_word.endswith(end) and len(first_word) > 2:
-            return "Female", 87
+            return "Female", 93 # Elevated from 87
             
-    # 4. Fallback Ending Check (Last word) - CONFIDENCE 70-72
+    # 4. Fallback Ending Check (Last word) - CONFIDENCE 80-82 (BOOSTED)
     last_word = name_words[-1]
     if last_word != first_word and len(last_word) > 2: 
         for end in male_endings:
             if last_word.endswith(end):
-                return "Male", 70
+                return "Male", 80 # Elevated from 70
         for end in female_endings:
             if last_word.endswith(end):
-                return "Female", 72
+                return "Female", 82 # Elevated from 72
 
     return "Ambiguous", 50 # Base ambiguous confidence
+
+
 
 
 # --- FUNCTION FOR AGGRESSIVE FULL NAME CLEANING ---
